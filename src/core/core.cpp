@@ -463,13 +463,17 @@ struct System::Impl {
         // Expose program id to dump sites and other global readers.
         Settings::SetCurrentProgramID(params.program_id);
 #ifdef __ANDROID__
-        if (params.program_id == 0x0400486024DEC000ULL &&
-            Settings::values.resolution_setup.UsingGlobal() &&
-            Settings::values.resolution_setup.GetValue() >= Settings::ResolutionSetup::Res1X) {
-            LOG_INFO(Core, "Ocarina of Time on Android: using 0.5x resolution by default");
-            Settings::values.resolution_setup.SetGlobal(false);
-            Settings::values.resolution_setup.SetValue(Settings::ResolutionSetup::Res1_2X);
-            Settings::UpdateRescalingInfo();
+        if (params.program_id == 0x0400486024DEC000ULL) {
+            if (Settings::values.resolution_setup.GetValue() >= Settings::ResolutionSetup::Res1X) {
+                LOG_INFO(Core, "Ocarina of Time on Android: using 0.5x resolution");
+                Settings::values.resolution_setup.SetGlobal(false);
+                Settings::values.resolution_setup.SetValue(Settings::ResolutionSetup::Res1_2X);
+                Settings::UpdateRescalingInfo();
+            }
+            Settings::values.vram_usage_mode.SetGlobal(false);
+            Settings::values.vram_usage_mode.SetValue(Settings::VramUsageMode::Conservative);
+            Settings::values.use_asynchronous_shaders.SetGlobal(false);
+            Settings::values.use_asynchronous_shaders.SetValue(true);
         }
 #endif
 

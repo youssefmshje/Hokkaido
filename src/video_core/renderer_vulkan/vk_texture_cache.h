@@ -488,6 +488,12 @@ public:
 
     u32 HostMipLevels() const noexcept;
 
+    /// A small single-level image standing in for one too large to back on a device without
+    /// sparse images.
+    [[nodiscard]] bool IsStandIn() const noexcept {
+        return original_image.IsUnbacked() && !original_image.IsSparse();
+    }
+
     /// No memory was left to make it: the texture cache drops it instead of using it.
     [[nodiscard]] bool OutOfMemory() const noexcept {
         return !original_image && info.type != VideoCommon::ImageType::Buffer;

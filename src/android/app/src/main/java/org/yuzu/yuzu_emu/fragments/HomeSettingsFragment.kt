@@ -483,14 +483,16 @@ class HomeSettingsFragment : Fragment() {
             )
         )!!
 
-        val intent = Intent(Intent.ACTION_SEND)
-            .setDataAndType(currentLog.uri, FileUtil.TEXT_PLAIN)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        if (!Log.gameLaunched && oldLog.exists()) {
-            intent.putExtra(Intent.EXTRA_STREAM, oldLog.uri)
-            startActivity(Intent.createChooser(intent, getText(R.string.share_log)))
-        } else if (currentLog.exists()) {
-            intent.putExtra(Intent.EXTRA_STREAM, currentLog.uri)
+        val logToShare = when {
+            !Log.gameLaunched && oldLog.exists() -> oldLog
+            currentLog.exists() -> currentLog
+            else -> null
+        }
+        if (logToShare != null) {
+            val intent = Intent(Intent.ACTION_SEND)
+                .setDataAndType(logToShare.uri, FileUtil.TEXT_PLAIN)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .putExtra(Intent.EXTRA_STREAM, logToShare.uri)
             startActivity(Intent.createChooser(intent, getText(R.string.share_log)))
         } else {
             Toast.makeText(

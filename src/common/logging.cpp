@@ -9,6 +9,7 @@
 #include <climits>
 #include <cstdlib>
 #include <deque>
+#include <fstream>
 #include <mutex>
 #include <regex>
 #include <thread>
@@ -248,11 +249,38 @@ struct FileBackend final : public Backend {
         old_filename += ".old.txt";
         // Existence checks are done within the functions themselves.
         // We don't particularly care if these succeed or not.
-        void(FS::RemoveFile(old_filename));
-        void(FS::RenameFile(filename, old_filename));
+        if (!FS::Exists(old_filename) || HasGameBoot(filename)) {
+            void(FS::RemoveFile(old_filename));
+            void(FS::RenameFile(filename, old_filename));
+        }
         file.emplace(filename, FS::FileAccessMode::Write, FS::FileType::TextFile);
     }
     ~FileBackend() noexcept override = default;
+
+    static bool HasGameBoot(const std::filesystem::path& path) noexcept {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) {
+            return false;
+        }
+        constexpr std::string_view marker = ":Load: Loading ";
+        std::string chunk(1 << 20, '\0');
+        std::string window;
+        for (int i = 0; i < 16 && stream; ++i) {
+            stream.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+            const auto read = static_cast<size_t>(stream.gcount());
+            if (read == 0) {
+                break;
+            }
+            window.append(chunk.data(), read);
+            if (window.find(marker) != std::string::npos) {
+                return true;
+            }
+            if (window.size() >= marker.size()) {
+                window.erase(0, window.size() - (marker.size() - 1));
+            }
+        }
+        return false;
+    }
 
     void Write(const Entry& entry) noexcept override {
         if (!enabled)

@@ -299,6 +299,29 @@ VkResult MemoryAllocator::AllocateImage(const VkImageCreateInfo &ci, bool dedica
             image = std::move(sparse);
             return VK_SUCCESS;
         }
+        if (huge) {
+            VkImageCreateInfo stub_ci = ci;
+            stub_ci.extent.width = (std::min)(ci.extent.width, 16U);
+            stub_ci.extent.height = (std::min)(ci.extent.height, 16U);
+            stub_ci.extent.depth = (std::min)(ci.extent.depth, 16U);
+            stub_ci.mipLevels = 1;
+            VkImage stub_handle{};
+            VmaAllocation stub_allocation{};
+            if (vmaCreateImage(allocator, &stub_ci, &alloc_ci, &stub_handle, &stub_allocation,
+                               nullptr) == VK_SUCCESS) {
+                static u32 stub_logged{};
+                if (stub_logged++ < 32) {
+                    LOG_WARNING(Render_Vulkan,
+                                "Image {}x{}x{} ({} levels, {} layers, format {}) does not fit "
+                                "and sparse images are unavailable; using a stand-in image",
+                                ci.extent.width, ci.extent.height, ci.extent.depth, ci.mipLevels,
+                                ci.arrayLayers, static_cast<u32>(ci.format));
+                }
+                image = vk::Image(stub_handle, ci.usage, *device.GetLogical(), allocator,
+                                  stub_allocation, device.GetDispatchLoader(), true);
+                return VK_SUCCESS;
+            }
+        }
     }
     if (result != VK_SUCCESS) {
         failed_images.fetch_add(1, std::memory_order_relaxed);

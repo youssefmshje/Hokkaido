@@ -692,13 +692,19 @@ class Image {
 public:
     explicit Image(VkImage handle_, VkImageUsageFlags usage_, VkDevice owner_,
                    VmaAllocator allocator_, VmaAllocation allocation_,
-                   const DeviceDispatch& dld_) noexcept
+                   const DeviceDispatch& dld_, bool stub_ = false) noexcept
         : handle{handle_}, usage{usage_}, owner{owner_}, allocator{allocator_},
-          allocation{allocation_}, dld{&dld_} {}
+          allocation{allocation_}, dld{&dld_}, stub{stub_} {}
     Image() = default;
 
-    /// True for an image created without memory (an unbacked sparse image).
+    /// True for an image created without memory (an unbacked sparse image), or for a small
+    /// stand-in image used where the device cannot create sparse images.
     bool IsUnbacked() const noexcept {
+        return handle != VK_NULL_HANDLE && (allocation == VK_NULL_HANDLE || stub);
+    }
+
+    /// True for an unbacked sparse image (memory can be bound to it later).
+    bool IsSparse() const noexcept {
         return handle != VK_NULL_HANDLE && allocation == VK_NULL_HANDLE;
     }
 
@@ -707,7 +713,7 @@ public:
 
     Image(Image&& rhs) noexcept
         : handle{std::exchange(rhs.handle, VkImage{})}, usage{rhs.usage}, owner{rhs.owner},
-          allocator{rhs.allocator}, allocation{rhs.allocation}, dld{rhs.dld} {}
+          allocator{rhs.allocator}, allocation{rhs.allocation}, dld{rhs.dld}, stub{rhs.stub} {}
 
     Image& operator=(Image&& rhs) noexcept {
         Release();
@@ -717,6 +723,7 @@ public:
         allocator = rhs.allocator;
         allocation = rhs.allocation;
         dld = rhs.dld;
+        stub = rhs.stub;
         return *this;
     }
 
@@ -761,6 +768,7 @@ private:
     VmaAllocator allocator = nullptr;
     VmaAllocation allocation = nullptr;
     const DeviceDispatch* dld = nullptr;
+    bool stub = false;
 };
 
 struct MemoryLocation {
