@@ -620,6 +620,10 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
         .max_subgroup_size = device.GetMaxSubgroupSize(),
         .has_broken_robust =
             device.IsNvidia() && device.GetNvidiaArch() <= NvidiaArchitecture::Arch_Pascal,
+        .has_broken_mesh_user_sgprs =
+            (driver_id == VK_DRIVER_ID_MESA_RADV &&
+             device.GetDriverVersion() < VK_MAKE_VERSION(26, 2, 5)) ||
+            device.IsXclipse(),
         .min_ssbo_alignment = device.GetStorageBufferAlignment(),
         .max_user_clip_distances = device.GetMaxUserClipDistances()
     };
@@ -629,6 +633,10 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
         !profile.support_cooperative_hmma && device.IsCooperativeHmma16x16x16Supported();
     if (profile.support_cooperative_hmma_16x16x16) {
         LOG_INFO(Render_Vulkan, "Guest tensor operations run on 16x16x16 cooperative matrices");
+    }
+    if (profile.has_broken_mesh_user_sgprs) {
+        LOG_INFO(Render_Vulkan, "RADV/Xclipse: native mesh shaders read the grid size to "
+                                "avoid the stale mesh user SGPR hang");
     }
 
     host_info = Shader::HostTranslateInfo{

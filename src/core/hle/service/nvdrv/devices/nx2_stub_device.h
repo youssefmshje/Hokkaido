@@ -80,6 +80,27 @@ public:
         }
     }
 
+    void UnmapMemory(u64 cpu_address, u64 size) {
+        const u64 end = cpu_address + size;
+        std::scoped_lock lk{mutex};
+        std::vector<std::pair<u64, u64>> gpu_ranges;
+        for (const auto& m : mappings) {
+            const u64 m_end = m.cpu_address + m.size;
+            if (m_end <= cpu_address || m.cpu_address >= end) {
+                continue;
+            }
+            const u64 begin = (std::max)(m.cpu_address, cpu_address);
+            const u64 range_end = (std::min)(m_end, end);
+            gpu_ranges.emplace_back(m.gpu_address + (begin - m.cpu_address), range_end - begin);
+        }
+        for (const auto& [gpu_address, gpu_size] : gpu_ranges) {
+            TrimMappings(gpu_address, gpu_size);
+            for (auto& [owner, listener] : listeners) {
+                listener.unmap(gpu_address, gpu_size);
+            }
+        }
+    }
+
     // Backing memory [cpu_address, +size) is about to be freed (its GPU mappings are gone): each
     // address space drops its SMMU mapping of it, in GPU-thread order.
     void ReleaseBacking(u64 cpu_address, u64 size) {

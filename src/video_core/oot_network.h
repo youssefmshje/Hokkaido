@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <mutex>
 
@@ -30,6 +31,29 @@ constexpr u64 OutputProgramKey = 0xda6df3e54c716df2ULL;
 /// Constant buffer 0 offset of the output pass's texture handle for the B10G11R11 image it writes
 /// (the scene image the rest of the frame uses).
 constexpr u32 OutputImageHandleOffset = 0xd0;
+
+struct BaseOutputProgram {
+    u64 key;
+    u32 input_handle_offset;
+    u32 output_handle_offset;
+};
+
+constexpr std::array<BaseOutputProgram, 5> BaseOutputPrograms{{
+    {0x2b50127c7a085869ULL, 0xc0, 0xd0},
+    {0xb374f1398bb32787ULL, 0xc0, 0xd0},
+    {0x8d8ac7bf2d00de3cULL, 0xc0, 0xd0},
+    {0x15d390b10d92e54fULL, 0xd0, 0xe0},
+    {0xcf09c441da8933cfULL, 0xd0, 0xe0},
+}};
+
+constexpr const BaseOutputProgram* FindBaseOutputProgram(u64 key) {
+    for (const auto& program : BaseOutputPrograms) {
+        if (program.key == key) {
+            return &program;
+        }
+    }
+    return nullptr;
+}
 
 /// Fragment shaders of the game's tonemap passes; render target 0 of their draws is the
 /// network's input.

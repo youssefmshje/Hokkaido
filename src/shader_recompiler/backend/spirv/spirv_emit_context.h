@@ -429,6 +429,7 @@ public:
     Id mesh_task_offsets_buffer{};
     Id mesh_task_args_buffer{};
     Id mesh_group_index{};
+    Id mesh_num_workgroups{};
 
     Id load_const_func_u8{};
     Id load_const_func_u16{};

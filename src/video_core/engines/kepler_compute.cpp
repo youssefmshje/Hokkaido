@@ -1069,6 +1069,9 @@ bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
     if (!BypassEnabled(program_id)) {
         return false;
     }
+    if (BypassOotBaseNetwork(native_key)) {
+        return true;
+    }
     auto* const bypass = rasterizer->OotNetworkBypass();
     if (!bypass) {
         return false;
@@ -1148,6 +1151,76 @@ bool KeplerCompute::BypassOotNetwork(u64 program_id, u64 native_key) {
         LOG_INFO(HW_GPU,
                  "Ocarina of Time: anti-aliasing network bypassed ({}): {:#x} -> {:#x} {}x{}",
                  copied ? "copy of the tonemapped image" : "copy failed", tonemapped.Address(),
+                 output->Address(), width, height);
+    }
+    return copied;
+}
+
+bool KeplerCompute::BypassOotBaseNetwork(u64 native_key) {
+    using namespace VideoCommon::OotNetwork;
+    const auto* const program = FindBaseOutputProgram(native_key);
+    if (!program) {
+        return false;
+    }
+    const auto input = ConstBuffer0Image(program->input_handle_offset);
+    const auto output = ConstBuffer0Image(program->output_handle_offset);
+    if (!input || !output || input->format != Texture::TextureFormat::B10G11R11 ||
+        output->format != Texture::TextureFormat::B10G11R11 || input->Address() == 0 ||
+        output->Address() == 0 || input->Address() == output->Address() ||
+        !input->IsBlockLinear() || !output->IsBlockLinear() ||
+        input->Width() != output->Width() || input->Height() != output->Height()) {
+        static bool warned = false;
+        if (!std::exchange(warned, true)) {
+            LOG_WARNING(HW_GPU,
+                        "Ocarina of Time: unexpected 1.0.0 network images for {:#x}; not replaced "
+                        "(input {}, output {})",
+                        native_key,
+                        input ? fmt::format("{}x{}", input->Width(), input->Height())
+                              : std::string{"unreadable"},
+                        output ? fmt::format("{}x{}", output->Width(), output->Height())
+                               : std::string{"unreadable"});
+        }
+        return false;
+    }
+    Fermi2D::Surface destination{};
+    destination.format = Tegra::RenderTargetFormat::B10G11R11_FLOAT;
+    destination.linear = Fermi2D::MemoryLayout::BlockLinear;
+    destination.block_width.Assign(output->block_width);
+    destination.block_height.Assign(output->block_height);
+    destination.block_depth.Assign(output->block_depth);
+    destination.depth = 1;
+    destination.width = output->Width();
+    destination.height = output->Height();
+    destination.addr_upper = static_cast<u32>(output->Address() >> 32);
+    destination.addr_lower = static_cast<u32>(output->Address());
+    Fermi2D::Surface source = destination;
+    source.block_width.Assign(input->block_width);
+    source.block_height.Assign(input->block_height);
+    source.block_depth.Assign(input->block_depth);
+    source.addr_upper = static_cast<u32>(input->Address() >> 32);
+    source.addr_lower = static_cast<u32>(input->Address());
+    const s32 width = static_cast<s32>(output->Width());
+    const s32 height = static_cast<s32>(output->Height());
+    const Fermi2D::Config config{
+        .operation = Fermi2D::Operation::SrcCopy,
+        .filter = Fermi2D::Filter::Point,
+        .must_accelerate = true,
+        .dst_x0 = 0,
+        .dst_y0 = 0,
+        .dst_x1 = width,
+        .dst_y1 = height,
+        .src_x0 = 0,
+        .src_y0 = 0,
+        .src_x1 = width,
+        .src_y1 = height,
+    };
+    const bool copied = rasterizer->AccelerateSurfaceCopy(source, destination, config);
+    static bool logged = false;
+    if (!std::exchange(logged, true)) {
+        LOG_INFO(HW_GPU,
+                 "Ocarina of Time: 1.0.0 anti-aliasing output pass {:#x} bypassed ({}): "
+                 "{:#x} -> {:#x} {}x{}",
+                 native_key, copied ? "copy of the input image" : "copy failed", input->Address(),
                  output->Address(), width, height);
     }
     return copied;

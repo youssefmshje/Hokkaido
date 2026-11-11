@@ -612,7 +612,27 @@ private:
             LOG_DEBUG(Service, "nx2:gpu 102 destroy handle={} [{:#x}, +{:#x}] slot={}", handle,
                       address, size, w[3]);
             if (size != 0) {
-                Nvidia::Devices::Nx2GpuMemoryRegistry::Get().Unmap(address, size);
+                auto& registry = Nvidia::Devices::Nx2GpuMemoryRegistry::Get();
+                {
+                    std::scoped_lock lk{m_region_mutex};
+                    for (auto tile = m_gpu_only_tiles.begin(); tile != m_gpu_only_tiles.end();) {
+                        if (tile->second.memory_handle != handle) {
+                            ++tile;
+                            continue;
+                        }
+                        const auto [tile_address, info] = *tile;
+                        m_gpu_only_memory.erase({info.memory_handle, info.offset});
+                        m_gpu_only_tile_bytes -= info.size;
+                        tile = m_gpu_only_tiles.erase(tile);
+                        if (const auto backing = OwnBackingOf(tile_address, info.size)) {
+                            registry.MapAt(tile_address, *backing, info.size);
+                        } else {
+                            registry.Unmap(tile_address, info.size);
+                        }
+                    }
+                }
+                registry.UnmapMemory(address, size);
+                registry.ReleaseBacking(address, size);
             }
             if (size == 0x2000) {
                 Tegra::Nx2RemoveSemaphoreRegion(address);

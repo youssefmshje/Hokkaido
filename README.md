@@ -29,10 +29,10 @@ Requirements: an arm64 phone with Android 13 or newer and Vulkan 1.3. Games, key
 
 | | | |
 |---|---|---|
-| Phone | Samsung Galaxy S26 (SM-S942B) | Samsung Galaxy S24 (SM-S921B) |
+| Phone | Samsung Galaxy S26 (SM-S942B) | Samsung Galaxy S24 / S24+ (SM-S921B / SM-S926B) |
 | SoC | Exynos 2600 | Exynos 2400 |
 | GPU | Samsung Xclipse 960 (AMD RDNA3, GFX11) | Samsung Xclipse 940 (AMD RDNA3, GFX11) |
-| RAM | 12 GB | 8 GB |
+| RAM | 12 GB | 8 GB / 12 GB |
 | OS | Android 17 (One UI) | Android 17 (One UI) |
 | GPU driver | Custom Mesa RADV build for Xclipse ("RADV Xclipse", Mesa 27.0-devel), installed through the app's GPU driver manager | Same |
 
@@ -46,7 +46,7 @@ Other phones may work, but these are the only devices Hokkaido is tested on so f
 
 | Game | Status |
 |---|---|
-| The Legend of Zelda: Ocarina of Time (Switch 2) | Playable. Use 0.5x resolution; 16 GB of RAM recommended. |
+| The Legend of Zelda: Ocarina of Time (Switch 2) | Playable on 12 GB phones (Galaxy S24+). Defaults to 0.5x resolution on Android; enable the built-in `FPS Unlock` patch for 60 FPS. |
 | Pokémon Pokopia | Playable and smooth, also on 8 GB phones. The sky is black. |
 | Fire Emblem: Fortune's Weave | Playable. Use 0.5x resolution and leave "Present a frame ahead" on Auto. |
 
@@ -56,8 +56,11 @@ Only results tested on the phones above are listed here.
 
 - AV1 movies are decoded with Android's hardware decoder (MediaCodec).
 - Ocarina of Time's movies skip the game's movie-enhancement neural network (which needs NVIDIA tensor cores), and show the movie frame directly.
+- Ocarina of Time defaults to 0.5x resolution on Android and supports bypassing the anti-aliasing neural network (`No sharpening`) on both 1.0.0 and updated builds.
+- Full Xclipse GPU detection (`RADV MAGELLAN`, `RADV VANGOGHLITE`, Samsung vendor ID), RADV GFX11 mesh shader SGPR fix, and task/mesh shader prologue initialization & compute fallback on both Xclipse (RADV) and Adreno (Turnip) so gameplay does not freeze on Galaxy S24 / S24+.
 - Emulated tensor-core math (HMMA) is faster on RADV.
-- Memory limits tuned for phones, so games are closed for low memory less often.
+- Memory limits tuned for 8–12 GB phones: resilient VMA buffer allocation, automatic eviction of unused transient render targets, smaller mesh emulation arenas, and complete GPU/SMMU memory unmapping on destroy.
+- Fast 16-byte block-linear texture swizzle/unswizzle and lock-free GPU `TickWork` fast path.
 - `EDEN_*` diagnostic switches can be set on Android with an `env.txt` file (see below).
 
 ## Recommended settings

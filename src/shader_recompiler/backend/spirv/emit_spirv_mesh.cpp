@@ -239,8 +239,14 @@ void MeshEpilogue(EmitContext& ctx) {
         return;
     }
     Barrier(ctx);
-    const Id count{ctx.OpUMin(ctx.U32[1], ctx.OpLoad(ctx.U32[1], ctx.mesh_primitive_count),
-                              ctx.Const(mesh.max_primitives))};
+    Id count{ctx.OpUMin(ctx.U32[1], ctx.OpLoad(ctx.U32[1], ctx.mesh_primitive_count),
+                        ctx.Const(mesh.max_primitives))};
+    if (Sirit::ValidId(ctx.mesh_num_workgroups)) {
+        const Id groups{ctx.OpCompositeExtract(
+            ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.mesh_num_workgroups), 0U)};
+        count = ctx.OpSelect(ctx.U32[1], ctx.OpIEqual(ctx.U1, groups, ctx.u32_zero_value),
+                             ctx.u32_zero_value, count);
+    }
     const Id max_vertices{ctx.Const(mesh.max_vertices)};
     // Marker for OpSetMeshOutputsEXT max_vertices, count (PatchMeshInstructions).
     ctx.OpStore(max_vertices, count);
@@ -347,20 +353,17 @@ void EmitMeshPrologue(EmitContext& ctx) {
     // No branches here: the entry block's label is a phi predecessor for later blocks.
     const bool as_compute{ctx.runtime_info.mesh_as_compute};
     if (ctx.stage == Stage::Task) {
-        if (!as_compute) {
-            return;
-        }
     } else if (ctx.stage != Stage::Mesh) {
         return;
     } else {
         // Every invocation stores the zero.
         ctx.OpStore(ctx.mesh_primitive_count, ctx.u32_zero_value);
     }
-    if (as_compute) {
+    if (ctx.stage == Stage::Task || ctx.stage == Stage::Mesh) {
         const Id invocation{LocalInvocation(ctx)};
         const u32 step{(std::max)(ctx.mesh_threads, 1U)};
         const u32 words{ctx.mesh_info.payload_words};
-        if (ctx.stage == Stage::Mesh && Sirit::ValidId(ctx.mesh_group_index)) {
+        if (as_compute && ctx.stage == Stage::Mesh && Sirit::ValidId(ctx.mesh_group_index)) {
             // Mesh emulation with a task: find this workgroup's task and its index within the
             // task's mesh workgroups, and copy the task's payload into the input region. Words
             // past the payload are clamped to its last one, so every store writes a real word.
@@ -402,7 +405,7 @@ void EmitMeshPrologue(EmitContext& ctx) {
                                          ctx.OpULessThan(ctx.U1, word, ctx.Const(stride)), value,
                                          ctx.u32_zero_value));
             }
-        } else {
+        } else if (as_compute || ctx.stage == Stage::Task) {
             // Without a task (and for the task's own output): plain workgroup memory, zeroed so
             // words nobody writes read as zero, not garbage. Indices past the region are clamped
             // to its last word, which is zeroed as well.

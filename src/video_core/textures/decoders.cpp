@@ -41,6 +41,20 @@ void incrpdep(u32& value) {
     value = ((value | ~mask) + swizzled_incr) & mask;
 }
 
+consteval std::array<std::array<u16, 4>, 8> MakeGobUnitOffsets(bool native_tiling) {
+    std::array<std::array<u16, 4>, 8> table{};
+    for (u32 y = 0; y < 8; ++y) {
+        const u32 swizzled_y = pdep<SWIZZLE_Y_BITS>(y);
+        for (u32 u = 0; u < 4; ++u) {
+            const u32 swizzled_x = pdep<SWIZZLE_X_BITS>(u * 16);
+            table[y][u] = static_cast<u16>(NativeGobOffset(swizzled_x | swizzled_y, native_tiling));
+        }
+    }
+    return table;
+}
+
+constexpr auto GobUnitOffsets = std::array{MakeGobUnitOffsets(false), MakeGobUnitOffsets(true)};
+
 template <bool TO_LINEAR, u32 BYTES_PER_PIXEL>
 void SwizzleImpl(std::span<u8> output, std::span<const u8> input, u32 width, u32 height, u32 depth,
                  u32 block_height, u32 block_depth, u32 stride, bool native_tiling) {
@@ -62,6 +76,43 @@ void SwizzleImpl(std::span<u8> output, std::span<const u8> input, u32 width, u32
     const u32 block_height_mask = (1U << block_height) - 1;
     const u32 block_depth_mask = (1U << block_depth) - 1;
     const u32 x_shift = GOB_SIZE_SHIFT + block_height + block_depth;
+
+    if constexpr (BYTES_PER_PIXEL == 16) {
+        const auto& gob_offsets = GobUnitOffsets[native_tiling ? 1 : 0];
+        const u32 gob_x_step = 1U << x_shift;
+        const u32 full_gobs = width >> 2;
+        const u32 tail_units = width & 3;
+        for (u32 slice = 0; slice < depth; ++slice) {
+            const u32 z = slice + origin_z;
+            const u32 offset_z = (z >> block_depth) * slice_size +
+                                 ((z & block_depth_mask) << (GOB_SIZE_SHIFT + block_height));
+            for (u32 line = 0; line < height; ++line) {
+                const u32 y = line + origin_y;
+                const u32 block_y = y >> GOB_SIZE_Y_SHIFT;
+                const u32 offset_y = (block_y >> block_height) * block_size +
+                                     ((block_y & block_height_mask) << GOB_SIZE_SHIFT);
+                const auto& row_offsets = gob_offsets[y & 7];
+                u32 base = offset_z + offset_y;
+                u32 unswizzled_offset = (slice * height + line) * pitch;
+                for (u32 gx = 0; gx < full_gobs; ++gx, base += gob_x_step) {
+                    for (u32 u = 0; u < 4; ++u, unswizzled_offset += 16) {
+                        const u32 swizzled_offset = base + row_offsets[u];
+                        u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                        const u8* const src =
+                            &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+                        std::memcpy(dst, src, 16);
+                    }
+                }
+                for (u32 u = 0; u < tail_units; ++u, unswizzled_offset += 16) {
+                    const u32 swizzled_offset = base + row_offsets[u];
+                    u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                    const u8* const src = &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+                    std::memcpy(dst, src, 16);
+                }
+            }
+        }
+        return;
+    }
 
     for (u32 slice = 0; slice < depth; ++slice) {
         const u32 z = slice + origin_z;
@@ -120,6 +171,44 @@ void SwizzleSubrectImpl(std::span<u8> output, std::span<const u8> input, u32 wid
 
     u32 unprocessed_lines = num_lines;
     u32 extent_y = (std::min)(num_lines, height - origin_y);
+
+    if constexpr ((16 % BYTES_PER_PIXEL) == 0) {
+        static constexpr u32 pixels_per_unit = 16 / BYTES_PER_PIXEL;
+        if ((origin_x % pixels_per_unit) == 0 && (extent_x % pixels_per_unit) == 0) {
+            const auto& gob_offsets = GobUnitOffsets[native_tiling ? 1 : 0];
+            const u32 unit_origin_x = origin_x / pixels_per_unit;
+            const u32 unit_extent_x = extent_x / pixels_per_unit;
+            for (u32 slice = 0; slice < depth; ++slice) {
+                const u32 z = slice + origin_z;
+                const u32 offset_z = (z >> block_depth) * slice_size +
+                                     ((z & block_depth_mask) << (GOB_SIZE_SHIFT + block_height));
+                const u32 lines_in_y = (std::min)(unprocessed_lines, extent_y);
+                for (u32 line = 0; line < lines_in_y; ++line) {
+                    const u32 y = line + origin_y;
+                    const u32 block_y = y >> GOB_SIZE_Y_SHIFT;
+                    const u32 offset_y = (block_y >> block_height) * block_size +
+                                         ((block_y & block_height_mask) << GOB_SIZE_SHIFT);
+                    const auto& row_offsets = gob_offsets[y & 7];
+                    u32 unswizzled_offset = (slice * height + line) * pitch;
+                    for (u32 u = 0; u < unit_extent_x; ++u, unswizzled_offset += 16) {
+                        const u32 unit_x = unit_origin_x + u;
+                        const u32 swizzled_offset =
+                            offset_z + offset_y + ((unit_x >> 2) << x_shift) +
+                            row_offsets[unit_x & 3];
+                        u8* const dst = &output[TO_LINEAR ? swizzled_offset : unswizzled_offset];
+                        const u8* const src =
+                            &input[TO_LINEAR ? unswizzled_offset : swizzled_offset];
+                        std::memcpy(dst, src, 16);
+                    }
+                }
+                unprocessed_lines -= lines_in_y;
+                if (unprocessed_lines == 0) {
+                    return;
+                }
+            }
+            return;
+        }
+    }
 
     for (u32 slice = 0; slice < depth; ++slice) {
         const u32 z = slice + origin_z;

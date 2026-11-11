@@ -183,6 +183,17 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 images_deleted{};
     std::map<u64, std::pair<u32, GPUVAddr>> created_shapes;
     bool debug_stats{}; ///< Collect what only the debug statistics lines use
+    struct TransientTarget {
+        ImageId id;
+        u64 allocation_tick;
+        u64 check_tick;
+        u32 survived;
+    };
+    std::deque<TransientTarget> transient_targets;
+    u64 transient_evictions{};
+    u64 logged_transient_evictions{};
+    ImageId last_created_image{};
+    void EvictDeadRenderTargets();
 
     static constexpr s64 DEFAULT_EXPECTED_MEMORY = 1_GiB + 125_MiB;
     static constexpr s64 DEFAULT_CRITICAL_MEMORY = 1_GiB + 625_MiB;

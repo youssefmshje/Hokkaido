@@ -146,16 +146,20 @@ void nvhost_as_gpu::Nx2Map(u64 gpu_address, u64 cpu_address, u64 size) {
     // The same CPU range is often mapped twice (at its own address and in a sparse region), so
     // reuse its SMMU mapping.
     Nx2DeviceRange range{};
+    bool reused = false;
     if (const auto it = nx2_device_ranges.find({cpu_address, size}); it != nx2_device_ranges.end()) {
         range = it->second;
+        reused = true;
     } else if (session->has_preallocated_area && session->mapper->IsInBounds(cpu_address, size)) {
         range = {session->mapper->Map(cpu_address, size), true};
     } else {
+        auto& smmu = system.Host1x().MemoryManager();
+        bool allocated = false;
         const auto allocate = [&]() -> u64 {
-            auto& smmu = system.Host1x().MemoryManager();
             const DAddr address = smmu.Allocate(Common::AlignUp(size, 0x20000));
             if (address != 0) {
                 smmu.Map(address, cpu_address, size, session->asid, true);
+                allocated = true;
             }
             return address;
         };
@@ -173,6 +177,10 @@ void nvhost_as_gpu::Nx2Map(u64 gpu_address, u64 cpu_address, u64 size) {
                          cpu_address, size);
             return;
         }
+        reused = !allocated;
+    }
+    if (reused) {
+        Nx2RefreshBacking(range, cpu_address, size);
     }
     const DAddr device_address = range.address;
     nx2_device_ranges[{cpu_address, size}] = range;
@@ -224,6 +232,24 @@ void nvhost_as_gpu::Nx2Release(u64 cpu_address, u64 size) {
         smmu.Free(range.address, Common::AlignUp(size, 0x20000));
     });
     LOG_DEBUG(Service_NVDRV, "Switch 2 released backing {:#x}+{:#x}", cpu_address, size);
+}
+
+void nvhost_as_gpu::Nx2RefreshBacking(const Nx2DeviceRange& range, u64 cpu_address, u64 size) {
+    auto* session = container.GetSession(nx2_session);
+    if (session == nullptr) {
+        return;
+    }
+    if (range.heap) {
+        if (session->mapper) {
+            (void)session->mapper->Map(cpu_address, size);
+        }
+        return;
+    }
+    auto& smmu = system.Host1x().MemoryManager();
+    const auto asid = session->asid;
+    system.GPU().MapInOrder(0, 0, [&smmu, address = range.address, cpu_address, size, asid] {
+        smmu.Map(address, cpu_address, size, asid, true);
+    });
 }
 
 void nvhost_as_gpu::Nx2Sparse(u64 gpu_address, u64 size, bool create) {

@@ -117,6 +117,7 @@ struct Profile {
 
     /// Maxwell and earlier nVidia architectures have broken robust support
     bool has_broken_robust{};
+    bool has_broken_mesh_user_sgprs{};
 
     u64 min_ssbo_alignment{};
     u32 max_user_clip_distances{};

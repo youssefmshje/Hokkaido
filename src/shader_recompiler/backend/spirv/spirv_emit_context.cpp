@@ -1933,6 +1933,10 @@ void EmitContext::DefineMesh(const IR::Program& program) {
     if (as_compute) {
         return; // the output buffer: DefineMeshEmulationOutput, after the storage buffers
     }
+    if (profile.has_broken_mesh_user_sgprs) {
+        mesh_num_workgroups = DefineVariable(*this, U32[3], spv::BuiltIn::NumWorkgroups,
+                                             spv::StorageClass::Input);
+    }
 
     const Id vertex_count{Const(mesh_info.max_vertices)};
     const Id primitive_count{Const(mesh_info.max_primitives)};

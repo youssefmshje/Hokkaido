@@ -1971,6 +1971,7 @@ u64 Device::GetDeviceMemoryBudget() const {
         result = (std::min)(result, device_access_memory);
     }
 #ifdef __ANDROID__
+    result = (std::min)(result, device_access_memory);
     // The GPU shares the phone's RAM, and a driver's budget need not follow what is left of it:
     // at most what the GPU uses now plus what Android can still hand out, less a reserve.
     if (const u64 available = SystemMemoryInfo("MemAvailable"); available != 0) {
